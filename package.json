@@ -44,7 +44,7 @@
     "ssh2": "^0.8.5"
   },
   "devDependencies": {
-    "@types/node": "22",
+    "@types/node": "^22.19.17",
     "babel-eslint": "^10.1.0",
     "eslint": "^7.1.0",
     "get-port": "^5.1.1",
