@@ -62,7 +62,7 @@ export declare abstract class FileSystemInterface {
 
     /**
      * Called when a client reads from an open file.
-     * Return the data buffer, or `undefined` / falsy to signal EOF.
+     * Return a non-empty Buffer with the requested data, or an empty Buffer / `undefined` / `null` to signal EOF.
      */
     read(session: Record<string, unknown>, handle: Handle, offset: number, length: number): Promise<Buffer | undefined | null>;
 
@@ -80,7 +80,7 @@ export declare abstract class FileSystemInterface {
 
     /**
      * Called when a client reads the next batch of directory entries.
-     * Return an array of `FileEntry` objects, or `undefined` / falsy to signal EOF.
+     * Return a non-empty array of `FileEntry` objects per batch, or an empty array / `undefined` / `null` to signal EOF.
      */
     listdir(session: Record<string, unknown>, handle: Handle): Promise<FileEntry[] | undefined | null>;
 
