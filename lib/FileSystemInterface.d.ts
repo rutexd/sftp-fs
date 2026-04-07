@@ -46,6 +46,12 @@ export interface AuthenticationContext {
  */
 export declare abstract class FileSystemInterface {
     /**
+     * Normalizes a path before it is passed to any filesystem operation.
+     * The default implementation uses `path.posix.normalize`.
+     * Override to apply custom path normalization (e.g. for virtual or Windows-style paths).
+     */
+    normalize(pathname: string): string;
+    /**
      * Called when a client attempts to authenticate.
      *
      * - Return `void` (or `undefined`) to accept.

@@ -492,3 +492,76 @@ run().catch((err) => {
     console.error("Unexpected error:", err);
     process.exit(1);
 });
+
+async function runCustomNormalize() {
+    const port = await getPort();
+    const rootpath = await fs.mkdtemp(path.join(os.tmpdir(), "sftp-fs-cn-"));
+
+    let normalizeCalled = false;
+
+    class CustomFileSystem extends FileSystem {
+        normalize(pathname) {
+            normalizeCalled = true;
+
+            return path.posix.normalize(pathname);
+        }
+    }
+
+    const server = new Server(new CustomFileSystem(username, password));
+    const connection = new Client();
+    let sftp;
+
+    try {
+        await server.start(keyFile, port, "localhost");
+
+        console.log("Custom normalize");
+
+        await test("should connect with custom filesystem", async () => {
+            await new Promise((resolve, reject) => {
+                connection.once("ready", () => {
+                    connection.removeAllListeners("error");
+                    resolve();
+                });
+                connection.once("error", (error) => {
+                    connection.removeAllListeners("ready");
+                    reject(error);
+                });
+                connection.connect({ host: "localhost", port, username, password });
+            });
+
+            const fn = util.promisify(connection.sftp).bind(connection);
+            const obj = await fn();
+
+            sftp = {
+                mkdir: util.promisify(obj.mkdir).bind(obj),
+                rmdir: util.promisify(obj.rmdir).bind(obj),
+                stat: util.promisify(obj.stat).bind(obj)
+            };
+        });
+
+        await test("should call custom normalize when performing operations", async () => {
+            const pathname = path.join(rootpath, "cnfolder");
+
+            normalizeCalled = false;
+            await sftp.mkdir(pathname);
+            assert.ok(normalizeCalled, "normalize was not called during mkdir");
+
+            normalizeCalled = false;
+            await sftp.stat(pathname);
+            assert.ok(normalizeCalled, "normalize was not called during stat");
+
+            normalizeCalled = false;
+            await sftp.rmdir(pathname);
+            assert.ok(normalizeCalled, "normalize was not called during rmdir");
+        });
+    } finally {
+        connection.end();
+        await server.stop();
+        await fs.rm(rootpath, { recursive: true, force: true });
+    }
+}
+
+runCustomNormalize().catch((err) => {
+    console.error("Unexpected error:", err);
+    process.exit(1);
+});
