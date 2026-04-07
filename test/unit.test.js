@@ -4,6 +4,7 @@ const assert = require("assert");
 const HandleId = require("../lib/HandleId");
 const Handle = require("../lib/Handle");
 const Connection = require("../lib/Connection");
+const sftp = require("../lib/sftp");
 
 let passed = 0;
 let failed = 0;
@@ -239,6 +240,109 @@ async function run() {
 
         assert.equal(p2Resolved, true, "second respond must complete after canContinue()");
         assert.deepEqual(order, [ 1, 2 ]);
+    });
+
+    // ---------------------------------------------------------------------------
+    // sftp close action — fs.close / fs.closeDir are called correctly
+    // ---------------------------------------------------------------------------
+
+    console.log("sftp close action — fs.close / fs.closeDir dispatch");
+
+    await test("should call fs.close for a file handle", async () => {
+        const closeCalls = [];
+        const closeDirCalls = [];
+
+        const fakeFsSession = {};
+        const fakeFs = {
+            close: async (session, handle) => closeCalls.push(handle),
+            closeDir: async (session, handle) => closeDirCalls.push(handle)
+        };
+
+        const handlers = {};
+        const fakeStream = {
+            on(event, fn) { handlers[event.toLowerCase()] = fn; },
+            status() {}
+        };
+        const conn = new Connection({ end() {} });
+
+        conn.addStream(fakeStream);
+        sftp(fakeFs, conn, fakeStream);
+
+        conn.client = { session: fakeFsSession };
+
+        const handle = conn.createFileHandle("/tmp/file.txt");
+        const encodedId = handle.id.encoded;
+
+        await handlers.close(1, encodedId);
+
+        assert.equal(closeCalls.length, 1, "fs.close must be called once");
+        assert.equal(closeCalls[0], handle, "fs.close must receive the correct handle");
+        assert.equal(closeDirCalls.length, 0, "fs.closeDir must not be called for a file handle");
+        assert.equal(conn.handles.length, 0, "handle must be removed after close");
+    });
+
+    await test("should call fs.closeDir for a directory handle", async () => {
+        const closeCalls = [];
+        const closeDirCalls = [];
+
+        const fakeFsSession = {};
+        const fakeFs = {
+            close: async (session, handle) => closeCalls.push(handle),
+            closeDir: async (session, handle) => closeDirCalls.push(handle)
+        };
+
+        const handlers = {};
+        const fakeStream = {
+            on(event, fn) { handlers[event.toLowerCase()] = fn; },
+            status() {}
+        };
+        const conn = new Connection({ end() {} });
+
+        conn.addStream(fakeStream);
+        sftp(fakeFs, conn, fakeStream);
+
+        conn.client = { session: fakeFsSession };
+
+        const handle = conn.createDirectoryHandle("/tmp/dir");
+        const encodedId = handle.id.encoded;
+
+        await handlers.close(1, encodedId);
+
+        assert.equal(closeDirCalls.length, 1, "fs.closeDir must be called once");
+        assert.equal(closeDirCalls[0], handle, "fs.closeDir must receive the correct handle");
+        assert.equal(closeCalls.length, 0, "fs.close must not be called for a directory handle");
+        assert.equal(conn.handles.length, 0, "handle must be removed after close");
+    });
+
+    await test("should not call fs.close or fs.closeDir when handle does not exist", async () => {
+        const closeCalls = [];
+        const closeDirCalls = [];
+
+        const fakeFs = {
+            close: async (session, handle) => closeCalls.push(handle),
+            closeDir: async (session, handle) => closeDirCalls.push(handle)
+        };
+
+        const handlers = {};
+        const fakeStream = {
+            on(event, fn) { handlers[event.toLowerCase()] = fn; },
+            status() {}
+        };
+        const conn = new Connection({ end() {} });
+
+        conn.addStream(fakeStream);
+        sftp(fakeFs, conn, fakeStream);
+
+        conn.client = { session: {} };
+
+        const unknownId = Buffer.alloc(4);
+
+        unknownId.writeUInt32BE(9999, 0);
+
+        await handlers.close(1, unknownId);
+
+        assert.equal(closeCalls.length, 0, "fs.close must not be called for an unknown handle");
+        assert.equal(closeDirCalls.length, 0, "fs.closeDir must not be called for an unknown handle");
     });
 
     // ---------------------------------------------------------------------------

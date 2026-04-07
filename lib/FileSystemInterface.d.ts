@@ -104,4 +104,10 @@ export declare abstract class FileSystemInterface {
 
     /** Called when a client creates a symbolic link. */
     symlink(session: Record<string, unknown>, targetPathname: string, linkPathname: string): Promise<void>;
+
+    /** Called when a client closes an open file handle. Override to perform cleanup. */
+    close(session: Record<string, unknown>, handle: Handle): Promise<void>;
+
+    /** Called when a client closes an open directory handle. Override to perform cleanup. */
+    closeDir(session: Record<string, unknown>, handle: Handle): Promise<void>;
 }
