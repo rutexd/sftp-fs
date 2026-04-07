@@ -110,7 +110,7 @@ class FileSystem extends FileSystemInterface {
     async write(session, handle, offset, data) {
         const fileHandle = handle.getParam("fileHandle");
 
-        await fileHandle.write(data, offset);
+        await fileHandle.write(data, 0, data.length, offset);
     }
 
     async read(session, handle, offset, length) {

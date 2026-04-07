@@ -21,7 +21,6 @@ process.on("SIGINT", async () => {
 const run = async () => {
     console.log(`Starting SFTP server on port ${port}`);
     console.log(` - Key file in use is: ${keyFile}`);
-    console.log(` - Login username is: ${username}`);
 
     server.on("client-connected", () => {
         console.log("Client connected!");
