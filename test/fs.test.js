@@ -75,7 +75,7 @@ async function run() {
     let sftp;
 
     try {
-        await server.start(keyFile, port);
+        await server.start(keyFile, port, "localhost");
 
         console.log("Connection");
 
