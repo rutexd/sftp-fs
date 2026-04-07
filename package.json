@@ -3,6 +3,7 @@
   "version": "0.0.7",
   "description": "Make it simple to implement a SFTP server by implementing a FS interface class",
   "main": "index.js",
+  "types": "index.d.ts",
   "author": "Mattias Runge-Broberg <mattias@runge.se>",
   "contributors": [
     {
@@ -32,6 +33,7 @@
   "license": "MIT",
   "scripts": {
     "test": "jest",
+    "check-types": "tsc --noEmit",
     "lint": "git ls-files \"*.js\" | xargs eslint",
     "server": "node ./server/index.js"
   },
@@ -42,8 +44,10 @@
     "ssh2": "^0.8.5"
   },
   "devDependencies": {
+    "@types/node": "22",
     "babel-eslint": "^10.1.0",
     "eslint": "^7.1.0",
-    "get-port": "^5.1.1"
+    "get-port": "^5.1.1",
+    "typescript": "^6.0.2"
   }
 }
