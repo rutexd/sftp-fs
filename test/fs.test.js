@@ -324,6 +324,158 @@ async function run() {
 
             assert.equal(filepath, pathname);
         });
+
+        console.log("Normalization");
+
+        await test("should normalize paths for stat", async () => {
+            const pathname = path.join(rootpath, "normfolder");
+
+            await sftp.mkdir(pathname);
+
+            const attrs = cleanAttrs(await sftp.stat(path.join(rootpath, "normfolder", "..", "normfolder")));
+            const llist = await list(rootpath);
+            const entry = llist.find((e) => e.filename === "normfolder");
+
+            await sftp.rmdir(pathname);
+
+            assert.deepEqual(attrs, entry.attrs);
+        });
+
+        await test("should normalize paths for mkdir and rmdir", async () => {
+            await sftp.mkdir(path.join(rootpath, "normfolder2", "..", "normfolder2"));
+
+            const llist = await list(rootpath);
+
+            assert.equal(llist.some((e) => e.filename === "normfolder2"), true);
+
+            await sftp.rmdir(path.join(rootpath, "normfolder2", "..", "normfolder2"));
+
+            const llist2 = await list(rootpath);
+
+            assert.equal(llist2.some((e) => e.filename === "normfolder2"), false);
+        });
+
+        await test("should normalize paths for rename", async () => {
+            const pathname = path.join(rootpath, "normfolder3");
+
+            await sftp.mkdir(pathname);
+            await sftp.rename(
+                path.join(rootpath, "normfolder3", "..", "normfolder3"),
+                path.join(rootpath, "normfolder3", "..", "normfolder3renamed")
+            );
+
+            const llist = await list(rootpath);
+
+            assert.equal(llist.some((e) => e.filename === "normfolder3renamed"), true);
+
+            await sftp.rmdir(path.join(rootpath, "normfolder3renamed"));
+        });
+
+        console.log("Existence checks");
+
+        await test("should return error when opening non-existent file for reading", async () => {
+            const filename = path.join(rootpath, "nonexistent.txt");
+
+            await assert.rejects(
+                () => sftp.open(filename, "r"),
+                (err) => {
+                    assert.ok(err.code === 2 || err.message.includes("No such"), `Unexpected error: ${err.message}`);
+
+                    return true;
+                }
+            );
+        });
+
+        await test("should return error when listing non-existent directory", async () => {
+            const pathname = path.join(rootpath, "nonexistentdir");
+
+            await assert.rejects(
+                () => sftp.readdir(pathname),
+                (err) => {
+                    assert.ok(err.code === 2 || err.message.includes("No such"), `Unexpected error: ${err.message}`);
+
+                    return true;
+                }
+            );
+        });
+
+        await test("should return error when removing non-existent file", async () => {
+            const filename = path.join(rootpath, "nonexistent.txt");
+
+            await assert.rejects(
+                () => sftp.unlink(filename),
+                (err) => {
+                    assert.ok(err.code === 2 || err.message.includes("No such"), `Unexpected error: ${err.message}`);
+
+                    return true;
+                }
+            );
+        });
+
+        await test("should return error when removing non-existent directory", async () => {
+            const pathname = path.join(rootpath, "nonexistentdir");
+
+            await assert.rejects(
+                () => sftp.rmdir(pathname),
+                (err) => {
+                    assert.ok(err.code === 2 || err.message.includes("No such"), `Unexpected error: ${err.message}`);
+
+                    return true;
+                }
+            );
+        });
+
+        await test("should return error when renaming non-existent path", async () => {
+            const pathname = path.join(rootpath, "nonexistent");
+
+            await assert.rejects(
+                () => sftp.rename(pathname, path.join(rootpath, "renamed")),
+                (err) => {
+                    assert.ok(err.code === 2 || err.message.includes("No such"), `Unexpected error: ${err.message}`);
+
+                    return true;
+                }
+            );
+        });
+
+        await test("should return error when setstat on non-existent path", async () => {
+            const pathname = path.join(rootpath, "nonexistent");
+
+            await assert.rejects(
+                () => sftp.setstat(pathname, { mode: 0o755 }),
+                (err) => {
+                    assert.ok(err.code === 2 || err.message.includes("No such"), `Unexpected error: ${err.message}`);
+
+                    return true;
+                }
+            );
+        });
+
+        await test("should return error when readlink on non-existent path", async () => {
+            const pathname = path.join(rootpath, "nonexistentlink");
+
+            await assert.rejects(
+                () => sftp.readlink(pathname),
+                (err) => {
+                    assert.ok(err.code === 2 || err.message.includes("No such"), `Unexpected error: ${err.message}`);
+
+                    return true;
+                }
+            );
+        });
+
+        await test("should return error when realpath on non-existent path", async () => {
+            const pathname = path.join(rootpath, "nonexistentpath");
+
+            await assert.rejects(
+                () => sftp.realpath(pathname),
+                (err) => {
+                    assert.ok(err.code === 2 || err.message.includes("No such"), `Unexpected error: ${err.message}`);
+
+                    return true;
+                }
+            );
+        });
     } finally {
         await server.stop();
         await fs.rm(rootpath, { recursive: true, force: true });
