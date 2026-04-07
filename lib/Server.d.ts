@@ -34,7 +34,7 @@ export declare class Server extends EventEmitter {
     /**
      * Start the SFTP server and listen on `port`.
      *
-     * `key` can be either:
+     * `hostKey` can be either:
      * - a `string` path to a host-key file (e.g. an RSA private key), or
      * - a `Buffer` containing the raw host-key data.
      *
@@ -44,7 +44,7 @@ export declare class Server extends EventEmitter {
      *
      * Resolves once the server is listening.
      */
-    start(key: string | Buffer, port: number, hostname?: string): Promise<void>;
+    start(hostKey: string | Buffer, port: number, hostname?: string): Promise<void>;
 
     /**
      * Stop the server: close all active connections and stop accepting new ones.
