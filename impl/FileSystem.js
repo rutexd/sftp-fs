@@ -1,8 +1,8 @@
 "use strict";
 
 const path = require("path");
-const fs = require("fs-extra");
-const { SFTP_OPEN_MODE } = require("ssh2");
+const { promises: fs, constants } = require("fs");
+const { utils: { sftp: { OPEN_MODE: SFTP_OPEN_MODE } } } = require("ssh2");
 const FileSystemInterface = require("../lib/FileSystemInterface");
 const { PermissionDeniedError } = require("../lib/errors");
 
@@ -17,15 +17,15 @@ const longname = (name, attrs, num) => {
         str = "l";
     }
 
-    str += (attrs.mode & fs.constants.S_IRUSR) ? "r" : "-";
-    str += (attrs.mode & fs.constants.S_IWUSR) ? "w" : "-";
-    str += (attrs.mode & fs.constants.S_IXUSR) ? "x" : "-";
-    str += (attrs.mode & fs.constants.S_IRGRP) ? "r" : "-";
-    str += (attrs.mode & fs.constants.S_IWGRP) ? "w" : "-";
-    str += (attrs.mode & fs.constants.S_IXGRP) ? "x" : "-";
-    str += (attrs.mode & fs.constants.S_IROTH) ? "r" : "-";
-    str += (attrs.mode & fs.constants.S_IWOTH) ? "w" : "-";
-    str += (attrs.mode & fs.constants.S_IXOTH) ? "x" : "-";
+    str += (attrs.mode & constants.S_IRUSR) ? "r" : "-";
+    str += (attrs.mode & constants.S_IWUSR) ? "w" : "-";
+    str += (attrs.mode & constants.S_IXUSR) ? "x" : "-";
+    str += (attrs.mode & constants.S_IRGRP) ? "r" : "-";
+    str += (attrs.mode & constants.S_IWGRP) ? "w" : "-";
+    str += (attrs.mode & constants.S_IXGRP) ? "x" : "-";
+    str += (attrs.mode & constants.S_IROTH) ? "r" : "-";
+    str += (attrs.mode & constants.S_IWOTH) ? "w" : "-";
+    str += (attrs.mode & constants.S_IXOTH) ? "x" : "-";
     str += " ";
     str += num;
     str += " ";
@@ -46,27 +46,27 @@ const convFlags = (flags) => {
     let mode = 0;
 
     if ((flags & SFTP_OPEN_MODE.READ) && (flags & SFTP_OPEN_MODE.WRITE)) {
-        mode = fs.constants.O_RDWR;
+        mode = constants.O_RDWR;
     } else if (flags & SFTP_OPEN_MODE.READ) {
-        mode = fs.constants.O_RDONLY;
+        mode = constants.O_RDONLY;
     } else if (flags & SFTP_OPEN_MODE.WRITE) {
-        mode = fs.constants.O_WRONLY;
+        mode = constants.O_WRONLY;
     }
 
     if (flags & SFTP_OPEN_MODE.CREAT) {
-        mode |= fs.constants.O_CREAT;
+        mode |= constants.O_CREAT;
     }
 
     if (flags & SFTP_OPEN_MODE.APPEND) {
-        mode |= fs.constants.O_APPEND;
+        mode |= constants.O_APPEND;
     }
 
     if (flags & SFTP_OPEN_MODE.EXCL) {
-        mode |= fs.constants.O_EXCL;
+        mode |= constants.O_EXCL;
     }
 
     if (flags & SFTP_OPEN_MODE.TRUNC) {
-        mode |= fs.constants.O_TRUNC;
+        mode |= constants.O_TRUNC;
     }
 
     return mode;
@@ -93,10 +93,10 @@ class FileSystem extends FileSystemInterface {
     }
 
     async open(session, handle, flags, attrs) {
-        const id = await fs.open(handle.pathname, convFlags(flags), attrs.mode);
+        const fileHandle = await fs.open(handle.pathname, convFlags(flags), attrs.mode);
 
-        handle.setParam("id", id);
-        handle.addDisposable(async () => await fs.close(id));
+        handle.setParam("fileHandle", fileHandle);
+        handle.addDisposable(() => fileHandle.close());
     }
 
     async stat(session, pathname) {
@@ -108,21 +108,21 @@ class FileSystem extends FileSystemInterface {
     }
 
     async write(session, handle, offset, data) {
-        const id = handle.getParam("id");
+        const fileHandle = handle.getParam("fileHandle");
 
-        await fs.write(id, data, offset);
+        await fileHandle.write(data, 0, data.length, offset);
     }
 
     async read(session, handle, offset, length) {
-        const id = handle.getParam("id");
-        const attrs = await fs.fstat(id);
+        const fileHandle = handle.getParam("fileHandle");
+        const attrs = await fileHandle.stat();
 
         if (offset >= attrs.size) {
             return;
         }
 
         const buffer = Buffer.alloc(length);
-        const { bytesRead } = await fs.read(id, buffer, 0, length, offset);
+        const { bytesRead } = await fileHandle.read(buffer, 0, length, offset);
 
         return buffer.slice(0, bytesRead);
     }
@@ -152,7 +152,7 @@ class FileSystem extends FileSystemInterface {
     }
 
     async mkdir(session, pathname, attrs) {
-        await fs.mkdir(pathname, attrs.mode & ~fs.constants.S_IFMT);
+        await fs.mkdir(pathname, { mode: attrs.mode & ~constants.S_IFMT });
         await this.setstat(session, pathname, {
             uid: attrs.uid,
             gid: attrs.gid,

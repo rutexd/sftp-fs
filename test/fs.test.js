@@ -1,12 +1,10 @@
 "use strict";
 
-/* global describe it afterAll beforeAll */
-
 const util = require("util");
 const os = require("os");
 const path = require("path");
 const assert = require("assert");
-const fs = require("fs-extra");
+const { promises: fs, constants } = require("fs");
 const getPort = require("get-port");
 const { Client } = require("ssh2");
 
@@ -16,19 +14,31 @@ const Server = require("../lib/Server");
 const username = "userName";
 const password = "passWord";
 const keyFile = path.join(__dirname, "..", "server", "keys", "id_rsa");
-const server = new Server(new FileSystem(username, password));
-const connection = new Client();
 
-let port;
-let sftp;
-let rootpath;
+let passed = 0;
+let failed = 0;
 
-process.on("unhandledRejection", (error, promise) => {
-    console.error(new Date());
-    console.error("Warning, unhandled promise rejection", error);
-    console.error("Promise: ", promise);
-    process.exit(255);
-});
+const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+
+async function test(name, fn) {
+    try {
+        await fn();
+        console.log(`  ✓ ${name}`);
+        passed++;
+    } catch (err) {
+        console.error(`  ✗ ${name}: ${err.message}`);
+        failed++;
+    }
+}
+
+const cleanAttrs = (attrs) => {
+    const cleaned = Object.assign({}, attrs);
+
+    delete cleaned.extended;
+    delete cleaned.permissions;
+
+    return cleaned;
+};
 
 const stat = async (pathname) => {
     const attrs = await fs.stat(pathname);
@@ -38,66 +48,52 @@ const stat = async (pathname) => {
         uid: attrs.uid,
         gid: attrs.gid,
         size: attrs.size,
-        atime: Math.floor(attrs.atime.getTime() / 1000),
-        mtime: Math.floor(attrs.mtime.getTime() / 1000)
+        atime: Math.floor(attrs.atimeMs / 1000),
+        mtime: Math.floor(attrs.mtimeMs / 1000)
     };
 };
 
 const list = async (pathname) => {
     const files = await fs.readdir(pathname);
-
-    const list = [];
+    const entries = [];
 
     for (const filename of files) {
         const fullpath = path.join(pathname, filename);
         const attrs = await stat(fullpath);
 
-        list.push({
-            filename,
-            longname: "",
-            attrs
-        });
+        entries.push({ filename, longname: "", attrs });
     }
 
-    return list;
+    return entries;
 };
 
-describe("sftp-fs", () => {
-    beforeAll(async () => {
-        port = await getPort();
-        rootpath = await fs.mkdtemp(path.join(os.tmpdir(), "sftp-fs-"));
+async function run() {
+    const port = await getPort();
+    const rootpath = await fs.mkdtemp(path.join(os.tmpdir(), "sftp-fs-"));
+    const server = new Server(new FileSystem(username, password));
+    const connection = new Client();
+    let sftp;
 
+    try {
         await server.start(keyFile, port);
-    });
 
-    afterAll(async () => {
-        await server.stop();
-        await fs.remove(rootpath);
-    });
+        console.log("Connection");
 
-    describe("Connection", () => {
-        it("should connect successfully", async () => {
+        await test("should connect successfully", async () => {
             await new Promise((resolve, reject) => {
                 connection.once("ready", () => {
                     connection.removeAllListeners("error");
                     resolve();
                 });
-
                 connection.once("error", (error) => {
                     connection.removeAllListeners("ready");
                     reject(error);
                 });
-
-                connection.connect({
-                    host: "localhost",
-                    port,
-                    username,
-                    password
-                });
+                connection.connect({ host: "localhost", port, username, password });
             });
         });
 
-        it("should start sftp subsystem successfully", async () => {
+        await test("should start sftp subsystem successfully", async () => {
             const fn = util.promisify(connection.sftp).bind(connection);
             const obj = await fn();
 
@@ -121,40 +117,37 @@ describe("sftp-fs", () => {
                 close: util.promisify(obj.close).bind(obj)
             };
         });
-    });
 
-    describe("Directory", () => {
-        it("should list an empty directory successfully", async () => {
+        console.log("Directory");
+
+        await test("should list an empty directory successfully", async () => {
             const slist = await sftp.readdir(rootpath);
-
             const llist = await list(rootpath);
+
             assert.equal(llist.length, 0);
             assert.deepEqual(slist, llist);
         });
 
-        it("should create a directory successfully", async () => {
+        await test("should create a directory successfully", async () => {
             await sftp.mkdir(path.join(rootpath, "folder"));
-
             const llist = await list(rootpath);
+
             assert.equal(llist.length, 1);
             assert.equal(llist[0].filename, "folder");
         });
 
-        it("should stat a directory successfully", async () => {
-            const attrs = await sftp.stat(path.join(rootpath, "folder"));
-
-            delete attrs.permissions;
-
+        await test("should stat a directory successfully", async () => {
+            const attrs = cleanAttrs(await sftp.stat(path.join(rootpath, "folder")));
             const llist = await list(rootpath);
+
             assert.deepEqual(attrs, llist[0].attrs);
         });
 
-        it("should set stat successfully", async () => {
+        await test("should set stat successfully", async () => {
             const pathname = path.join(rootpath, "folder");
             const sattrs = {
                 mode: 0o777,
-                uid: 1000,
-                gid: 1000,
+                ...(isRoot ? { uid: 1000, gid: 1000 } : {}),
                 atime: 1000,
                 mtime: 2000
             };
@@ -164,29 +157,33 @@ describe("sftp-fs", () => {
             const lattrs = await stat(pathname);
 
             delete lattrs.size;
-            lattrs.mode = lattrs.mode & ~fs.constants.S_IFMT;
+            if (!isRoot) {
+                delete lattrs.uid;
+                delete lattrs.gid;
+            }
+            lattrs.mode = lattrs.mode & ~constants.S_IFMT;
 
             assert.deepEqual(sattrs, lattrs);
         });
 
-        it("should rename a directory successfully", async () => {
+        await test("should rename a directory successfully", async () => {
             await sftp.rename(path.join(rootpath, "folder"), path.join(rootpath, "folder2"));
-
             const llist = await list(rootpath);
+
             assert.equal(llist.length, 1);
             assert.equal(llist[0].filename, "folder2");
         });
 
-        it("should remove a directory successfully", async () => {
+        await test("should remove a directory successfully", async () => {
             await sftp.rmdir(path.join(rootpath, "folder2"));
-
             const llist = await list(rootpath);
+
             assert.equal(llist.length, 0);
         });
-    });
 
-    describe("Symlink", () => {
-        it("should create a symlink successfully", async () => {
+        console.log("Symlink");
+
+        await test("should create a symlink successfully", async () => {
             const pathname = path.join(rootpath, "folder");
             const linkname = path.join(rootpath, "folder_link");
 
@@ -194,70 +191,61 @@ describe("sftp-fs", () => {
             await sftp.symlink(pathname, linkname);
 
             const llist = await list(rootpath);
+
             assert.equal(llist.length, 2);
         });
 
-        it("should readlink successfully", async () => {
+        await test("should readlink successfully", async () => {
             const pathname = path.join(rootpath, "folder");
             const linkname = path.join(rootpath, "folder_link");
-
             const pn = await sftp.readlink(linkname);
 
             assert.equal(pn, pathname);
         });
 
-        it("should lstat a directory successfully", async () => {
-            const attrs = await sftp.lstat(path.join(rootpath, "folder"));
-
-            delete attrs.permissions;
-
+        await test("should lstat a directory successfully", async () => {
+            const attrs = cleanAttrs(await sftp.lstat(path.join(rootpath, "folder")));
             const llist = await list(rootpath);
+
             assert.deepEqual(attrs, llist[0].attrs);
         });
-    });
 
-    describe("File", () => {
-        it("should write a file successfully", async () => {
+        console.log("File");
+
+        await test("should write a file successfully", async () => {
             const filename = path.join(rootpath, "file.txt");
             const content = Buffer.from("Hello World");
-
             const handle = await sftp.open(filename, "w");
 
             await sftp.write(handle, content, 0, content.length, 0);
-
             await sftp.close(handle);
         });
 
-        it("should stat a file successfully", async () => {
+        await test("should stat a file successfully", async () => {
             const filename = path.join(rootpath, "file.txt");
-            const attrs = await sftp.stat(filename);
-
-            delete attrs.permissions;
-
+            const attrs = cleanAttrs(await sftp.stat(filename));
             const llist = await list(rootpath);
+
             assert.deepEqual(attrs, llist[0].attrs);
         });
 
-        it("should fstat a file successfully", async () => {
+        await test("should fstat a file successfully", async () => {
             const filename = path.join(rootpath, "file.txt");
             const handle = await sftp.open(filename, "r");
-
-            const attrs = await sftp.fstat(handle);
+            const attrs = cleanAttrs(await sftp.fstat(handle));
 
             await sftp.close(handle);
 
-            delete attrs.permissions;
-
             const llist = await list(rootpath);
+
             assert.deepEqual(attrs, llist[0].attrs);
         });
 
-        it("should set stat successfully", async () => {
+        await test("should set stat successfully", async () => {
             const filename = path.join(rootpath, "file.txt");
             const sattrs = {
                 mode: 0o777,
-                uid: 1000,
-                gid: 1000,
+                ...(isRoot ? { uid: 1000, gid: 1000 } : {}),
                 atime: 1000,
                 mtime: 2000
             };
@@ -267,64 +255,88 @@ describe("sftp-fs", () => {
             const lattrs = await stat(filename);
 
             delete lattrs.size;
+            if (!isRoot) {
+                delete lattrs.uid;
+                delete lattrs.gid;
+            }
             lattrs.mode = lattrs.mode & 0o777;
 
             assert.deepEqual(sattrs, lattrs);
         });
 
-        it("should set fstat successfully", async () => {
+        await test("should set fstat successfully", async () => {
             const filename = path.join(rootpath, "file.txt");
             const handle = await sftp.open(filename, "r");
             const sattrs = {
                 mode: 0o777,
-                uid: 1000,
-                gid: 1000,
+                ...(isRoot ? { uid: 1000, gid: 1000 } : {}),
                 atime: 1000,
                 mtime: 2000
             };
 
             await sftp.fsetstat(handle, sattrs);
-
             await sftp.close(handle);
 
             const lattrs = await stat(filename);
 
             delete lattrs.size;
+            if (!isRoot) {
+                delete lattrs.uid;
+                delete lattrs.gid;
+            }
             lattrs.mode = lattrs.mode & 0o777;
 
             assert.deepEqual(sattrs, lattrs);
         });
 
-        it("should read a file successfully", async () => {
+        await test("should read a file successfully", async () => {
             const filename = path.join(rootpath, "file.txt");
             const handle = await sftp.open(filename, "r");
             const content = Buffer.from("Hello World");
             const buffer = Buffer.alloc(content.length);
 
             await sftp.read(handle, buffer, 0, buffer.length, 0);
-
             await sftp.close(handle);
 
             assert(content.equals(buffer));
         });
 
-        it("should remove a file successfully", async () => {
+        await test("should remove a file successfully", async () => {
             const filename = path.join(rootpath, "file.txt");
+
             await sftp.unlink(filename);
 
             const llist = await list(rootpath);
+
             assert.equal(llist.length, 2);
         });
-    });
 
-    describe("Other", () => {
-        it("should call realpath successfully", async () => {
+        console.log("Other");
+
+        await test("should call realpath successfully", async () => {
             const pathname = path.join(rootpath, "folder2");
+
             await sftp.mkdir(pathname);
+
             const filepath = await sftp.realpath(path.join(rootpath, "folder2", "..", "folder2", "..", "folder2"));
+
             await sftp.rmdir(pathname);
 
             assert.equal(filepath, pathname);
         });
-    });
+    } finally {
+        await server.stop();
+        await fs.rm(rootpath, { recursive: true, force: true });
+    }
+
+    console.log(`\n${passed} passed, ${failed} failed`);
+
+    if (failed > 0) {
+        process.exit(1);
+    }
+}
+
+run().catch((err) => {
+    console.error("Unexpected error:", err);
+    process.exit(1);
 });
