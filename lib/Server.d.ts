@@ -32,10 +32,19 @@ export declare class Server extends EventEmitter {
     constructor(filesystem: FileSystemInterface, opts?: ServerOptions);
 
     /**
-     * Start the SFTP server, reading the host key from `keyFile` and listening on `port`.
+     * Start the SFTP server and listen on `port`.
+     *
+     * `hostKey` can be either:
+     * - a `string` path to a host-key file (e.g. an RSA private key), or
+     * - a `Buffer` containing the raw host-key data.
+     *
+     * The optional `hostname` controls which network interface the server
+     * binds to (e.g. `"127.0.0.1"`). When omitted the server listens on
+     * all interfaces.
+     *
      * Resolves once the server is listening.
      */
-    start(keyFile: string, port: number): Promise<void>;
+    start(hostKey: string | Buffer, port: number, hostname?: string): Promise<void>;
 
     /**
      * Stop the server: close all active connections and stop accepting new ones.
