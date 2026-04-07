@@ -3,14 +3,11 @@
 const path = require("path");
 const FileSystem = require("../impl/FileSystem");
 const Server = require("../lib/Server");
-const minimist = require("minimist");
 
-const args = minimist(process.argv.slice(2));
-
-const keyFile = args.key || path.join(__dirname, "keys", "id_rsa");
-const username = args.username || process.env.USER;
-const password = args.password || "SuPerSeCrReT";
-const port = parseInt(args.port || 8022, 10);
+const keyFile = process.env.KEY_FILE || path.join(__dirname, "keys", "id_rsa");
+const username = process.env.SFTP_USERNAME || process.env.USER || "admin";
+const password = process.env.SFTP_PASSWORD || "SuPerSeCrReT";
+const port = parseInt(process.env.PORT || "8022", 10);
 
 const server = new Server(new FileSystem(username, password));
 
