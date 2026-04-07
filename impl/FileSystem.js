@@ -81,8 +81,11 @@ class FileSystem extends FileSystemInterface {
     }
 
     async authenticate(session, request) {
-        if (request.method !== "password" ||
-            request.username !== this.username ||
+        if (request.method !== "password") {
+            return [ "password" ];
+        }
+
+        if (request.username !== this.username ||
             request.password !== this.password) {
             throw new PermissionDeniedError();
         }
