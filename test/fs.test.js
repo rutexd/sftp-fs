@@ -500,7 +500,7 @@ async function runCustomNormalize() {
     let normalizeCalled = false;
 
     class CustomFileSystem extends FileSystem {
-        normalize(pathname) {
+        async normalize(session, pathname) {
             normalizeCalled = true;
 
             return path.posix.normalize(pathname);

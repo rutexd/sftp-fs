@@ -48,9 +48,11 @@ export declare abstract class FileSystemInterface {
     /**
      * Normalizes a path before it is passed to any filesystem operation.
      * The default implementation uses `path.posix.normalize`.
-     * Override to apply custom path normalization (e.g. for virtual or Windows-style paths).
+     * Override to apply custom path normalization — for example, to also resolve
+     * the canonical path via `this.realpath(session, path.posix.normalize(pathname))`
+     * for symlink resolution, or to apply virtual-root prefixing.
      */
-    normalize(pathname: string): string;
+    normalize(session: Record<string, unknown>, pathname: string): Promise<string>;
     /**
      * Called when a client attempts to authenticate.
      *
