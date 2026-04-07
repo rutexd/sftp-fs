@@ -32,7 +32,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "test": "node ./test/fs.test.js",
+    "test": "node ./test/unit.test.js && node ./test/fs.test.js",
     "check-types": "tsc --noEmit",
     "lint": "git ls-files \"*.js\" | xargs eslint",
     "server": "node ./server/index.js"
